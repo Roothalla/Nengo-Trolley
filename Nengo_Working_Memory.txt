@@ -1,0 +1,160 @@
+import nengo
+
+import numpy as np
+
+import nengo_spa as spa
+
+
+
+# Number of dimensions
+
+D=80
+
+
+
+# Defining vocabulary
+
+vocab = spa.Vocabulary(D)
+
+vocab.populate('''Action; Inaction; Lives_Lost; Lives_Saved; Means; Primary;
+
+    Secondary; Side_Effect; Five; One; Apropriate; Impersonal;
+
+    Personal; Upset_Family; Force; Alarm; Harm; End;
+
+    Bystander = Lives_Saved*One; Runaway_Trolley = Lives_Lost*Five;
+
+    Trolley_Stopper = Lives_Lost*One; Goal = Lives_Saved*Five;
+
+    Prototypical_Violence = Personal*Trolley_Stopper;
+
+    Trolley_End = End*Goal;
+    
+    Omission = Runaway_Trolley + Bystander;
+
+    Side_Effect_FB = Side_Effect*Upset_Family;
+
+    Force_FB = Force*Personal;
+
+    Harm_Trolley = Harm*Trolley_Stopper;
+
+    Means_FB = Means*(Force_FB + Harm_Trolley);
+
+    Primary_CC_FB = Means_FB + Trolley_End;
+
+    Dilemma_FB = Inaction*(Omission) + Action*(Primary*(Primary_CC_FB) + Secondary*(Side_Effect_FB));
+
+    Side_Effect_S = Side_Effect*Harm_Trolley;
+
+    Force_S = Force*Impersonal;
+
+    Means_S = Means*Force_S;
+
+    Primary_CC_S = Means_S + Trolley_End;
+
+    Dilemma_S = Inaction*(Omission) + Action*(Primary*(Primary_CC_S) + Secondary*(Side_Effect_S));
+
+    Means_L = Means*Harm_Trolley;
+
+    Secondary_CC_L = Means_L + Trolley_End;
+
+    Dilemma_L = Inaction*(Omission) + Action*(Primary*(Primary_CC_S) + Secondary*(Secondary_CC_L));
+
+    Emotional_Response = Prototypical_Violence*Alarm''')
+    
+# Mapping for Clean Up Memories 
+mapping = {
+    'Primary_CC_FB' : 'Primary_CC_FB',
+    'Primary_CC_S' : 'Primary_CC_S',
+    'Side_Effect_FB' : 'Side_Effect_FB',
+    'Side_Effect_S' : 'Side_Effect_S',
+    'Secondary_CC_L' : 'Secondary_CC_L',
+    'Trolley_Stopper' : 'Trolley_Stopper',
+    'Omission' : 'Omission',
+}
+
+
+
+with spa.Network() as model:
+    
+    # Defining States
+    Dilemma_Input = spa.State(vocab)
+    Working_Memory = spa.State(vocab)
+    Action_State = spa.State(vocab)
+    Primary_Means_State = spa.State(vocab)
+    Secondary_Means_State = spa.State(vocab)
+    Secondary_Side_Effect_State = spa.State(vocab)
+    Violence_State = spa.State(vocab)
+    Emotional_Response_State = spa.State(vocab)
+    
+    
+    # Defining Transcodes
+    Inaction_Transcode = spa.Transcode('Inaction', output_vocab=vocab)
+    Action_Transcode = spa.Transcode('Action', output_vocab=vocab)
+    Primary_Transcode = spa.Transcode('Primary', output_vocab=vocab)
+    Secondary_Transcode = spa.Transcode('Secondary', output_vocab=vocab)
+    Means_Transcode = spa.Transcode('Means', output_vocab=vocab)
+    Side_Effect_Transcode = spa.Transcode('Side_Effect', output_vocab=vocab)
+    Harm_Transcode = spa.Transcode('Harm', output_vocab=vocab)
+    Force_Transcode = spa.Transcode('Force', output_vocab=vocab)
+    Alarm_Transcode = spa.Transcode('Alarm', output_vocab=vocab)
+    Lives_Lost_Transcode = spa.Transcode('Lives_Lost', output_vocab=vocab)
+    Lives_Saved_Transcode = spa.Transcode('Lives_Saved', output_vocab=vocab)
+    
+    
+    # Defining Clean_Up Memories
+    Clean_Up_1 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_2 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_3 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_4 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_5 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_6 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_7 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_8 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_9 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_10 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    Clean_Up_11 = spa.WTAAssocMem(threshold=0.3, input_vocab=vocab,
+        mapping=mapping, function=lambda x: x > 0)
+    
+    # Binding
+    Dilemma_Input >> Working_Memory
+    Working_Memory *~ Inaction_Transcode >> Clean_Up_1
+    Working_Memory *~ Action_Transcode >> Action_State
+    Clean_Up_1 >> Working_Memory
+    Action_State *~ Primary_Transcode >> Clean_Up_2
+    Action_State *~ Secondary_Transcode >> Clean_Up_3
+    Clean_Up_2 *~ Means_Transcode >> Primary_Means_State
+    Primary_Means_State *~ Harm_Transcode >> Clean_Up_4
+    Primary_Means_State *~ Force_Transcode >> Clean_Up_5
+    Clean_Up_4 >> Working_Memory
+    Clean_Up_4 * Clean_Up_5 >> Violence_State
+    Violence_State * Alarm_Transcode >> Clean_Up_6
+    Clean_Up_6 >> Emotional_Response_State
+    Clean_Up_3 *~ Means_Transcode >> Secondary_Means_State
+    Secondary_Means_State *~ Harm_Transcode >> Clean_Up_7
+    Clean_Up_7 >> Working_Memory
+    Clean_Up_3 *~ Side_Effect_Transcode >> Secondary_Side_Effect_State
+    Secondary_Side_Effect_State *~ Harm_Transcode >> Clean_Up_8
+    Clean_Up_8 >> Working_Memory
+    Working_Memory *~ Lives_Lost_Transcode >> Clean_Up_9
+    Working_Memory *~ Lives_Saved_Transcode >> Clean_Up_10
+    
+    
+    
+
+print(model.n_neurons)
+    
+    
+    
+    
+    

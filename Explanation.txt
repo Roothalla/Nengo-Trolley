@@ -1,0 +1,48 @@
+Nengo_Text_Automatic
+
+This model is focused on looking through the primary causal chain which can only be in
+an action. In the primary causal chain it locates Personal Force being used to cause 
+Harm (killing a person). This then produces an Emotional Response.
+
+Changes From Last Version:
+	-Vocabulary matched with Manual_Binding_Trolley
+	-Removed inaction superposition, not sure if it really did anything
+	-Changed Last inverse bind to regular bing (Missed this mistake for 2 weeks)
+
+Goal:
+	For Dilemma_FB:
+		Emotional_Response_State = Emotional_Response
+	For Dilemma_S:
+		Emotional_Response_State = Nothing
+	For Dilemma_L:
+		Emotional_Response_State = Nothing
+
+
+
+Nengo_Text_Manual
+(The numbers on the threshold are all weird cuz I was trying to get down to D=96)
+
+This model is a linear mapping of how I would do the binding opperations for the
+manual consious process. The program uses binding to extract how many people are killed
+and saved from the different aspects of the dilemma. It looks through Inaction, and
+primary and secondary causal chains of the action.
+
+Goal:
+	For All:
+		Inaction_Lives_Lost_State = Five
+		Inaction_Lives_Saved_State = One
+		Action_Live_Saved_State_M = Five
+	For Dilemma_FB:
+		Primary_Lives_Lost_State_M = One
+	For Dilemma_S:
+		Secondary_Side_Effect_Lives_Lost_State = One
+	For Dilemma_L:
+		Secondary_Means_Lives_Lost_State = One
+
+
+Nengo_Working_Memory
+
+This model attempts to combine the previous two (Nengo_Text_Automatic and
+Nengo_Text_Manual) while also adding a clean up memory. Now I have not run this model
+yet, as I am not sure how to impliment a working memory I tried feedback=1 on a 
+previous model and that made the initial input just stay.

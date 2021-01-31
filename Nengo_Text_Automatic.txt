@@ -1,0 +1,131 @@
+import nengo
+import numpy as np
+import nengo_spa as spa
+
+# Number of dimensions
+D=112
+
+# Defining vocabulary
+vocab = spa.Vocabulary(D)
+vocab.populate('''Action; Inaction; Lives_Lost; Lives_Saved; Means; Primary;
+
+    Secondary; Side_Effect; Five; One; Apropriate; Impersonal;
+
+    Personal; Upset_Family; Force; Alarm; Harm; End;
+
+    Bystander = Lives_Saved*One; Runaway_Trolley = Lives_Lost*Five;
+
+    Trolley_Stopper = Lives_Lost*One; Goal = Lives_Saved*Five;
+
+    Prototypical_Violence = Personal*Trolley_Stopper;
+    
+    Emotional_Response = Prototypical_Violence*Alarm;
+
+    Trolley_End = End*Goal;
+    
+    Omission = Runaway_Trolley + Bystander;
+
+    Side_Effect_FB = Side_Effect*Upset_Family;
+
+    Force_FB = Force*Personal;
+
+    Harm_Trolley = Harm*Trolley_Stopper;
+
+    Means_FB = Means*(Force_FB + Harm_Trolley);
+
+    Primary_CC_FB = Means_FB + Trolley_End;
+
+    Dilemma_FB = Inaction*(Omission) + Action*(Primary*(Primary_CC_FB) + Secondary*(Side_Effect_FB));
+
+    Side_Effect_S = Side_Effect*Harm_Trolley;
+
+    Force_S = Force*Impersonal;
+
+    Means_S = Means*Force_S;
+
+    Primary_CC_S = Means_S + Trolley_End;
+
+    Dilemma_S = Inaction*(Omission) + Action*(Primary*(Primary_CC_S) + Secondary*(Side_Effect_S));
+
+    Means_L = Means*Harm_Trolley;
+
+    Secondary_CC_L = Means_L + Trolley_End;
+
+    Dilemma_L = Inaction*(Omission) + Action*(Primary*(Primary_CC_S) + Secondary*(Secondary_CC_L))''')
+    
+    
+mapping = {
+    'Primary_CC_FB' : 'Primary_CC_FB',
+    'Primary_CC_S' : 'Primary_CC_S',
+    'Personal' : 'Personal',
+    'Trolley_Stopper' : 'Trolley_Stopper',
+}
+
+
+with spa.Network() as model:
+    
+    # Define States
+    Dilemma_Input = spa.State(vocab)
+    Action_State_A = spa.State(vocab)
+    Primary_State_A = spa.State(vocab)
+    Means_State_A = spa.State(vocab)
+    Force_State_A = spa.State(vocab)
+    Violence_State_A = spa.State(vocab)
+    Emotional_Response_State = spa.State(vocab)
+    
+    #Action_Chain_State_A = spa.State(vocab)
+    Harm_State_A = spa.State(vocab)
+    
+
+    
+    # Define Transcodes
+    Action_Transcode = spa.Transcode('Action', output_vocab=vocab)
+    Primary_Transcode = spa.Transcode('Primary', output_vocab=vocab)
+    Means_Transcode = spa.Transcode('Means', output_vocab=vocab)
+    Force_Transcode = spa.Transcode('Force', output_vocab=vocab)
+    Alarm_Transcode = spa.Transcode('Alarm', output_vocab=vocab)
+
+   # Inaction_Transcode = spa.Transcode('Inaction', output_vocab=vocab)
+    Harm_Transcode = spa.Transcode('Harm', output_vocab=vocab)
+
+    # Clean Up Memories
+    Clean_Up_1 = model.assoc_mem = spa.WTAAssocMem(
+        threshold= 0.55, input_vocab=vocab, mapping=mapping,
+        function=lambda x: x > 0.)
+    Clean_Up_2 = model.assoc_mem = spa.WTAAssocMem(
+        threshold=0.32, input_vocab=vocab, mapping=mapping,
+        function=lambda x: x > 0.)
+    Clean_Up_3 = model.assoc_mem = spa.WTAAssocMem(
+        threshold=0.27, input_vocab=vocab, mapping=mapping,
+        function=lambda x: x > 0.)
+    #Clean_Up_10 = model.assoc_mem = spa.WTAAssocMem(
+    #    threshold=0.3, input_vocab=vocab, mapping=mapping,
+    #    function=lambda x: x > 0.)
+
+    
+    # Binding for Automatic Process
+    
+    Dilemma_Input *~ Action_Transcode >> Action_State_A
+    
+    Action_State_A *~ Primary_Transcode >> Clean_Up_1
+    
+    Primary_State_A *~ Means_Transcode >> Means_State_A
+    
+    Clean_Up_1 >> Primary_State_A
+    
+    Means_State_A *~ Force_Transcode >> Clean_Up_2
+    
+    Clean_Up_2 >> Force_State_A
+    
+    Means_State_A *~ Harm_Transcode >> Clean_Up_3
+    
+    Clean_Up_3 >> Harm_State_A
+    
+    Harm_State_A * Force_State_A >> Violence_State_A
+    
+    Violence_State_A * Alarm_Transcode >> Emotional_Response_State
+    
+    
+print(model.n_neurons)
+    
+    
