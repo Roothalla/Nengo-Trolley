@@ -1,0 +1,220 @@
+import nengo
+import numpy as np
+import nengo_spa as spa
+
+D = 256
+MAX_SIMILARITY = 0.1
+EMOTION_THRESHOLD = 0.3
+CONVERSION_THRESHOLD = 0.4
+WTA_NEURONS = 1000
+
+pointers = ['DILEMMA_FB', 'DILEMMA_S', 'DILEMMA_L',
+    'FB_ACTION_INITIATION', 'PUSH_MAN', 'MAN_FALLS_ONTO_TRACK',
+    'S_ACTION_INITIATION', 'PULL_SWITCH_S', 'ALIGN_TRACK_S', 'TURN_TROLLEY_S',
+    #'L_ACTION_INITIATION', 'PULL_SWITCH_L', 'ALIGN_TRACK_L', 'TURN_TROLLEY_L',
+    'FB_SIDE_EFFECT', 'UPSET_FAMILY',
+    'S_SIDE_EFFECT',
+    'RUN_AWAY_TROLLEY = LIVES_LOST*FIVE + LIVES_SAVED*ONE',
+    'TROLLEY_RUNS_OVER_MAN = LIVES_LOST*ONE + HARM*PROTOTYPICAL_VIOLENCE',
+    'TROLLEY_HITS_MAN = LIVES_LOST*ONE',
+    'SAVE_FIVE_PEOPLE = LIVES_SAVED*FIVE'
+]
+
+vocab = spa.Vocabulary(D, strict=False, max_similarity=MAX_SIMILARITY)
+
+vocab.populate(';'.join(i for i in pointers))
+vocab.add('NULL', np.zeros(D))
+    
+conversion_dict = {vocab['NULL']: 0,
+                   vocab['ONE']: 1, 
+                   vocab['TWO']: 2, 
+                   vocab['THREE']: 3, 
+                   vocab['FOUR']: 4, 
+                   vocab['FIVE']: 5,
+                   }
+    
+mappingPrimary = {
+    'FB_ACTION_INITIATION' : 'PUSH_MAN',
+    'PUSH_MAN' : 'MAN_FALLS_ONTO_TRACK',
+    'MAN_FALLS_ONTO_TRACK' : 'TROLLEY_RUNS_OVER_MAN',
+    'TROLLEY_RUNS_OVER_MAN' : 'SAVE_FIVE_PEOPLE',
+    
+    'S_ACTION_INITIATION' : 'PULL_SWITCH_S',
+    'PULL_SWITCH_S' : 'ALIGN_TRACK_S',
+    'ALIGN_TRACK_S' : 'TURN_TROLLEY_S',
+    'TURN_TROLLEY_S' : 'SAVE_FIVE_PEOPLE',
+    
+    'L_ACTION_INITIATION' : 'PULL_SWITCH_L',
+    'PULL_SWITCH_L' : 'ALIGN_TRACK_L',
+    'ALIGN_TRACK_L' : 'TURN_TROLLEY_L',
+    'TURN_TROLLEY_L' : 'SAVE_FIVE_PEOPLE',
+}
+
+mappingSecondary = {
+    'FB_SIDE_EFFECT': 'UPSET_FAMILY',
+    'S_SIDE_EFFECT' : 'TROLLEY_HITS_MAN',
+    'L_SIDE_EFFECT' : 'TROLLEY_RUNS_OVER_MAN',
+}
+
+def task_input(t):
+    if t < 0.1:
+        return 'DILEMMA_S'
+    elif 0.5 < t < 0.6:
+        return 'DILEMMA_FB'
+    elif 1 < t < 1.1:
+        return 'DILEMMA_L'
+    else:
+        return '0'
+
+def convert(t, x):
+    """Converts semantic pointer labels to numerical values"""
+    
+    similarities = [np.dot(x, key.v) for key in conversion_dict]
+
+    if max(similarities) > CONVERSION_THRESHOLD:
+        return similarities.index(max(similarities))
+    else:
+        return 0
+
+def convert_flip(t, x):
+    """Convers numerical representation of decision into semantic pointer vectors"""
+    if x >= 0:
+        return vocab['APROPRIATE'].v
+    else:
+        return vocab['NULL'].v
+
+with spa.Network() as model:
+    
+    #
+    symbl = spa.sym
+    
+    #
+    input_transcode = spa.Transcode(task_input, output_vocab=vocab)
+    input_state = spa.State(vocab)
+    inaction_state = spa.State(vocab)
+    inaction_lives_lost_state = spa.State(vocab)
+    inaction_lives_saved_state = spa.State(vocab)
+    primary_harm_state = spa.State(vocab, feedback=0.95)
+    primary_lives_lost_state = spa.State(vocab)
+    primary_lives_saved_state = spa.State(vocab)
+    secondary_lives_lost_state = spa.State(vocab)
+    judgment = spa.State(vocab)
+
+    
+    #
+    Primary_Action_Chain = spa.ThresholdingAssocMem(threshold=0.55, input_vocab=vocab,
+        mapping=mappingPrimary, function=lambda x: x > 0)
+    nengo.Connection(Primary_Action_Chain.output, Primary_Action_Chain.input,
+        synapse=.025, transform = 1)
+        
+    Secondary_Action_Chain = spa.ThresholdingAssocMem(threshold=0.7, input_vocab=vocab,
+        mapping=mappingSecondary, function=lambda x: x > 0)
+    nengo.Connection(Secondary_Action_Chain.output, Secondary_Action_Chain.input,
+        synapse=.025, transform = 1)
+   
+   # Conversion and calculation for inaciton
+    inaction_lost_convert_node = nengo.Node(output=convert, size_in=D, size_out=1,
+        label='Lives Lost Inaction')
+    inaction_saved_convert_node = nengo.Node(output=convert, size_in=D, size_out=1,
+        label='Lives Saved Inaction')
+    
+    nengo.Connection(inaction_lives_lost_state.output, inaction_lost_convert_node)
+    nengo.Connection(inaction_lives_saved_state.output, inaction_saved_convert_node)
+    
+    inaction_merged_ens = nengo.Ensemble(200, 2, label='inaction merged ensemble')
+    inaction_compute_ens = nengo.Ensemble(100, 1, label='inaction compute ensemble')
+    
+    nengo.Connection(inaction_saved_convert_node, inaction_merged_ens[0])
+    nengo.Connection(inaction_lost_convert_node, inaction_merged_ens[1])
+    nengo.Connection(inaction_merged_ens, inaction_compute_ens, function=lambda x: x[0] - x[1]) 
+    
+    # Conversion and calculation for primary causal chain
+    action_primary_lost_convert_node = nengo.Node(output=convert, size_in=D, size_out=1,
+    label='Lives Lost Primary')
+    action_primary_saved_convert_node = nengo.Node(output=convert, size_in=D, size_out=1,
+    label='Lives Saved Primary')
+    
+    nengo.Connection(primary_lives_lost_state.output, action_primary_lost_convert_node)
+    nengo.Connection(primary_lives_saved_state.output, action_primary_saved_convert_node)
+    
+    primary_merged_ens = nengo.Ensemble(200, 2, label='primary merged ensemble')
+    primary_compute_ens = nengo.Ensemble(100, 1, label='primary compute ensemble')
+    
+    nengo.Connection(action_primary_saved_convert_node, primary_merged_ens[0])
+    nengo.Connection(action_primary_lost_convert_node, primary_merged_ens[1])
+    nengo.Connection(primary_merged_ens, primary_compute_ens, function=lambda x: x[0] - x[1]) 
+    
+    # Conversion and calculation for secondary causal chain
+    action_secondary_lost_convert_node = nengo.Node(output=convert, size_in=D, size_out=1,
+    label='Lives Lost Secondary')
+
+    nengo.Connection(secondary_lives_lost_state.output, action_secondary_lost_convert_node)
+    
+    secondary_merged_ens = nengo.Ensemble(200, 2, label='secondary merged ensemble')
+    secondary_compute_ens = nengo.Ensemble(100, 1, label='secondary compute ensemble')
+    
+    nengo.Connection(action_primary_saved_convert_node, secondary_merged_ens[0])
+    nengo.Connection(action_secondary_lost_convert_node, secondary_merged_ens[1])
+    nengo.Connection(secondary_merged_ens, secondary_compute_ens, function=lambda x: x[0] - x[1])
+    
+    # Comparisons between action and inaction
+    comparison_merge_ens_0 = nengo.Ensemble(200, 2, label='comparison merge ensemble 0')
+    comparison_compute_ens_0 = nengo.Ensemble(100, 1, label='comarison compute ensemble 0')
+    comparison_merge_ens_1 = nengo.Ensemble(200, 2, label='comparison merge ensemble 1')
+    comparison_compute_ens_1 = nengo.Ensemble(100, 1, label='comarison compute ensemble 1')
+    
+    nengo.Connection(inaction_compute_ens, comparison_merge_ens_0[1])
+    nengo.Connection(secondary_compute_ens, comparison_merge_ens_0[0])
+    nengo.Connection(comparison_merge_ens_0, comparison_compute_ens_0,
+        function=lambda x: x[0] - np.abs(x[1]))
+    nengo.Connection(inaction_compute_ens, comparison_merge_ens_1[1])
+    nengo.Connection(primary_compute_ens, comparison_merge_ens_1[0])
+    nengo.Connection(comparison_merge_ens_1, comparison_compute_ens_1,
+        function=lambda x: x[0] - np.abs(x[1]))
+    
+    
+    convert_to_sp = nengo.Node(output=convert_flip, size_in=1, size_out=D, label='convert to sp 0')
+    DLPFC = spa.State(vocab)
+    
+    nengo.Connection(comparison_compute_ens_0, convert_to_sp)
+    nengo.Connection(comparison_compute_ens_1, convert_to_sp)
+    nengo.Connection(convert_to_sp, DLPFC.input)
+        
+    input_transcode >> input_state
+    inaction_state *~ symbl.LIVES_LOST >> inaction_lives_lost_state
+    inaction_state *~ symbl.LIVES_SAVED >> inaction_lives_saved_state
+    Primary_Action_Chain *~ symbl.LIVES_LOST >> primary_lives_lost_state
+    Primary_Action_Chain *~ symbl.LIVES_SAVED >> primary_lives_saved_state
+    Primary_Action_Chain *~ symbl.HARM >> primary_harm_state
+    Secondary_Action_Chain *~ symbl.LIVES_LOST >> secondary_lives_lost_state
+    DLPFC >> judgment
+    
+    with spa.ActionSelection():
+
+        spa.ifmax(spa.dot(input_state, symbl.DILEMMA_FB),
+        symbl.FB_ACTION_INITIATION >> Primary_Action_Chain,
+        symbl.RUN_AWAY_TROLLEY >> inaction_state)
+        
+        spa.ifmax(spa.dot(input_state, symbl.DILEMMA_S),
+        symbl.S_ACTION_INITIATION >> Primary_Action_Chain,
+        symbl.RUN_AWAY_TROLLEY >> inaction_state)
+        
+        spa.ifmax(spa.dot(input_state, symbl.DILEMMA_L),
+        symbl.L_ACTION_INITIATION >> Primary_Action_Chain,
+        symbl.RUN_AWAY_TROLLEY >> inaction_state)
+        
+        spa.ifmax(spa.dot(Primary_Action_Chain, symbl.TROLLEY_RUNS_OVER_MAN),
+        symbl.FB_SIDE_EFFECT >> Secondary_Action_Chain)
+        
+        spa.ifmax(spa.dot(Primary_Action_Chain, symbl.TURN_TROLLEY_S),
+        symbl.S_SIDE_EFFECT >> Secondary_Action_Chain)
+        
+        spa.ifmax(spa.dot(Primary_Action_Chain, symbl.TURN_TROLLEY_L),
+        symbl.L_SIDE_EFFECT >> Secondary_Action_Chain)
+        
+        spa.ifmax(spa.dot(primary_harm_state, symbl.PROTOTYPICAL_VIOLENCE),
+        symbl.INAPROPRIATE >> judgment)
+        
+print(model.n_neurons)
+    
+    
